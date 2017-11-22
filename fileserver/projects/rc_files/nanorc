@@ -1,0 +1,33 @@
+set morespace       # Use the second row (usually blank) for editing space
+set smarthome
+set const           # Show cursor position at the bottom of the screen
+unset historylog    # don't remember command history
+set tabsize 4       # Insert 4 spaces per tab
+set tabstospaces    # Tab key inserts spaces (Ctrl+t for verbatim mode)
+set autoindent      # Jump to the current indent level after inserting a newline
+set smooth          # Scroll one line at a time
+set quickblank      # Clear status messages after a single keystroke
+set undo            # Enable undo/redo features
+set regexp          # Enable regular expression mode for find (Ctrl+r to disable)
+#set nohelp          # Remove the help bar from the bottom of the screen
+
+unbind ^C all
+unbind ^G all
+bind ^C cancel all
+
+bind F1 help all
+bind ^Q exit main       # quit
+bind ^S writeout main   # save
+bind ^C copytext main   # copy
+#bind ^X cut main        # cut
+bind ^V uncut main      # paste
+bind ^Z undo main       # undo
+bind ^Y redo main       # redo
+bind ^F whereis all     # find
+bind F3 searchagain main # repeat find
+bind ^H replace all     # replace
+bind ^I casesens search
+bind ^I casesens replace
+
+## git commit files
+include "~/.nano/git.nanorc"

@@ -1,0 +1,32 @@
+{% set project_name = pillar.project_name|default('izeni') %}
+{% set python_path = pillar.python_path|default('') %}
+{% set uwsgi_ini = pillar.uwsgi_ini|default('server/uwsgi.ini') %}
+{% set django_project_name = pillar.django_project_name|default(project_name) %}
+{% set wsgi_module = pillar.wsgi_module|default(django_project_name+'.wsgi') %}
+{% set project_envs = pillar.project_envs|default({}) %}
+[Unit]
+Description=uWSGI instance to serve {{ project_name }}
+
+[Service]
+ExecStartPre=/bin/bash -c 'run_dir=/var/run/{{ project_name }}; mkdir -p $run_dir; chown www-data:www-data $run_dir; chmod 0775 $run_dir'
+ExecStart=/usr/local/bin/uwsgi --uid www-data \
+                               --gid www-data \
+                               --socket /var/run/{{ project_name }}/{{ project_name }}.sock \
+                               --vacuum \
+                               --virtualenv /opt/virtualenvs/{{ project_name }} \
+                               --pythonpath /opt/src/{{ project_name }}-backend/{{ python_path }} \
+                               --module={{ wsgi_module }}:application \
+                               --logfile-chmod 664 \
+                               --logto2 /var/log/{{ project_name }}/uwsgi.log \
+                               --ini /opt/src/{{ project_name }}-backend/{{ uwsgi_ini }} \
+                               --enable-threads \
+                               --single-interpreter \
+                               --die-on-term \
+                               --env=DB_NAME={{ pillar.db_name }} \
+                               --env=DB_PASS={{ pillar.db_pass }} \
+                               --env=DB_USER={{ pillar.db_user }} \
+                               --env=DB_HOST={{ pillar.db_host }} \
+                               {% for key, value in project_envs.items() %}--env={{ key }}={{ value }} {% endfor %}
+
+[Install]
+WantedBy=multi-user.target

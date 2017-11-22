@@ -1,0 +1,237 @@
+#!/bin/bash
+#
+# DESCRIPTION:
+#
+#   Set the bash prompt according to:
+#    * the active virtualenv
+#    * the branch/status of the current git repository
+#    * the return value of the previous command
+#    * the fact you just came from Windows and are used to having newlines in
+#      your prompts.
+#
+# USAGE:
+#
+#   1. Save this file as ~/.bash_prompt
+#   2. Add the following line to the end of your ~/.bashrc or ~/.bash_profile:
+#        . ~/.bash_prompt
+#
+# LINEAGE:
+#
+#   Based on work by woods
+#
+#   https://gist.github.com/31967
+
+# Pull in the various escape codes that we can use to color our prompt.
+source ${HOME}/.bash_prompt_colors
+
+# CUSTOMIZE HERE
+# CUSTOMIZE HERE
+# CUSTOMIZE HERE
+# color presets
+ERROR_COLOR=${LIGHT_RED}
+PATH_COLOR=${LIGHT_BLUE}
+USERHOST_COLOR=${COLOR_NONE}
+VIRTUALENV_COLOR=${LIGHT_GREEN}
+GITREPO_COLOR=${CYAN}
+GITBRANCH_COLOR=${LIGHT_CYAN}
+GITREMOTE_COLOR=${BRIGHT_CYAN}
+
+# Get the salt minion ID
+MINION_ID=$(grep id: /etc/salt/minion | cut -f2 -d " ")
+
+# if the string is empty, echo empty string, otherwise echo string with a trailing space
+function trailing_space {
+    if [ -z $1 ]; then
+        echo ""
+    else
+        echo "$@ "
+    fi
+}
+
+# if the string is empty, echo one space, otherwise echo string padded with spaces
+function pad_with_spaces {
+    if [ -z $1 ]; then
+        echo ""
+    else
+        echo " $@"
+    fi
+}
+
+# Return the prompt symbol to use, colorized based on the return value of the
+# previous command.
+function set_prompt_symbol () {
+  if test $1 -eq 0 ; then
+      PROMPT_SYMBOL=" \$"
+  else
+      PROMPT_SYMBOL="${ERROR_COLOR}\342\234\227${COLOR_NONE}\$"
+  fi
+}
+
+# Determine active Python virtualenv details.
+function set_virtualenv () {
+  if test -z "$VIRTUAL_ENV" ; then
+      PYTHON_VIRTUALENV=""
+  else
+      PYTHON_VIRTUALENV="${VIRTUALENV_COLOR}`basename \"$VIRTUAL_ENV\"`${COLOR_NONE}"
+  fi
+}
+
+# check django settings
+function set_django_settings () {
+  if test -z "$DJANGO_SETTINGS_MODULE" ; then
+      DJANGO_SETTINGS_PROMPT=""
+  else
+      local env=${DJANGO_SETTINGS_MODULE##*.}
+      local color
+      case $env in
+          dev)
+            color=$GREEN
+            ;;
+          staging)
+            color=$BRIGHT_YELLOW
+            ;;
+          production)
+            color=$RED
+            ;;
+          *)
+            color=$WHITE
+            ;;
+        esac
+      DJANGO_SETTINGS_PROMPT="${color}$env${COLOR_NONE} "
+  fi
+}
+
+
+# use python to do the complicated logic of parsing the git origin
+## url into something somewhat shorter and more readable, depending
+## on the provided width of the terminal, and whether the repo is
+## hosted remotely or locally
+function set_git_repo () {
+    MAX_COLS=$1
+    function _py_set_git_repo () {
+        python - $MAX_COLS `git config --get remote.origin.url` <<END
+from os import environ
+from sys import argv, exit
+from os.path import splitext
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
+max_cols = int(argv[1]) # first argument is the max width of the repo string
+repo = ' '.join(argv[2:]) # 2nd (and greater) argument is the git repo url
+if not repo: # if no git repo url, then this is local repo
+    print('local')
+    exit()
+# parse the git repo url to remove extra junk like usernames and such
+parsedurl = urlparse(repo)
+if not parsedurl.scheme:
+    parsedurl = urlparse('git://' + repo)
+host = splitext(parsedurl.netloc.rsplit('@')[-1])[0]
+name = splitext(parsedurl.path)[0]
+if ':' in parsedurl.netloc:
+    name = '/' + parsedurl.netloc.split(':')[-1] + name
+result = host + name
+# if the result is larger than the allowed max width, then just use the
+## last section of the result, since it has the most useful info
+if len(result) > max_cols:
+    print(result.rsplit('/')[-1])
+else:
+    print(result)
+END
+    }
+    REPO=${GITREPO_COLOR}$(_py_set_git_repo)${COLOR_NONE}
+}
+
+# What is the git branch for this repository?
+if [ -f /etc/bash_completion.d/git ]; then # Ubuntu <= 12.10
+    source /etc/bash_completion.d/git
+elif [ -f /etc/bash_completion.d/git-prompt ]; then # Ubuntu >= 13.04
+    source /etc/bash_completion.d/git-prompt
+fi
+function set_git_branch () {
+    set_git_repo $(echo $MAX_COLS/2|bc) # 50% of max path width
+    BRANCH=`__git_ps1 "%s"`
+    if [ -z "$BRANCH" ]; then
+        BRANCH=""
+    else
+
+        # Capture the output of the "git status" command.
+        git_status="$(git status 2> /dev/null)"
+
+        # Set arrow icon based on status against remote.
+        remote_pattern="# Your branch is (.*) of"
+        if [[ ${git_status} =~ ${remote_pattern} ]]; then
+            if [[ ${BASH_REMATCH[1]} == "ahead" ]]; then
+                remote="↑"
+            else
+                remote="↓"
+            fi
+        else
+            remote=""
+        fi
+        diverge_pattern="# Your branch and (.*) have diverged"
+        if [[ ${git_status} =~ ${diverge_pattern} ]]; then
+            remote="↕"
+        fi
+        remote=${GITREMOTE_COLOR}${remote}${COLOR_NONE}
+
+        BRANCH="${REPO}⎇ ${GITBRANCH_COLOR}${BRANCH}${COLOR_NONE}${remote}"
+    fi
+}
+
+set_new_pwd() {
+    ##################################################
+    # Fancy PWD display function
+    ##################################################
+    # The home directory (HOME) is replaced with a ~
+    # The last pwdmaxlen characters of the PWD are displayed
+    # Leading partial directory names are striped off
+    # /home/me/stuff        -> ~/stuff            if USER=me
+    # /usr/share/big_dir_name    -> ../share/big_dir_name    if pwdmaxlen=20
+    ##################################################
+    # How many characters of the $PWD should be kept
+    local pwdmaxlen=${MAX_COLS}
+    # Indicate that there has been dir truncation
+    local trunc_symbol="…"
+    local dir=${PWD##*/}
+    pwdmaxlen=$(( ( pwdmaxlen < ${#dir} ) ? ${#dir} : pwdmaxlen ))
+    NEW_PWD=${PWD/#$HOME/\~}
+    local pwdoffset=$(( ${#NEW_PWD} - pwdmaxlen ))
+    if [ ${pwdoffset} -gt "0" ]
+    then
+        NEW_PWD=${NEW_PWD:$pwdoffset:$pwdmaxlen}
+        NEW_PWD=${trunc_symbol}/${NEW_PWD#*/}
+    fi
+}
+
+# Set the full bash prompt.
+function set_bash_prompt () {
+  # Set the PROMPT_SYMBOL variable. We do this first so we don't lose the
+  # return value of the last command.
+  set_prompt_symbol $?
+
+  MAX_COLS=$(echo $COLUMNS/3|bc) # 33% of terminal width
+
+  # Set the git BRANCH variable.
+  set_git_branch
+
+  # Set the PYTHON_VIRTUALENV variable.
+  set_virtualenv
+
+  # figure out what django settings are in use
+  set_django_settings
+
+  # set the NEW_PWD variable.
+  set_new_pwd
+
+  # Set the bash prompt variable.
+  # Single Line prompt
+  #PS1="${USERHOST_COLOR}\u@${MINION_ID}(\h)${COLOR_NONE} $(trailing_space ${PYTHON_VIRTUALENV})$(trailing_space ${BRANCH})$(trailing_space ${DJANGO_SETTINGS_PROMPT})${PATH_COLOR}${NEW_PWD}${COLOR_NONE}${PROMPT_SYMBOL} ${COLOR_NONE}"
+
+  # or if you prefer a multi-line prompt, use this one
+  PS1="${USERHOST_COLOR}\u@${MINION_ID}(\h)${COLOR_NONE} $(trailing_space ${PYTHON_VIRTUALENV})$(trailing_space ${BRANCH})$(trailing_space ${DJANGO_SETTINGS_PROMPT})${PATH_COLOR}${NEW_PWD}${COLOR_NONE}
+#${PROMPT_SYMBOL} ${COLOR_NONE}"
+}
+
+# Tell bash to execute this function just before displaying its prompt.
+PROMPT_COMMAND=set_bash_prompt
