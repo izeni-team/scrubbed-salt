@@ -1,5 +1,7 @@
 # Standards for our Salt Project Deployments
 
+_Additional Information Available in the [Wiki](https://github.com/izeni-team/scrubbed-salt/wiki)_
+
 ## Variables
 ***variable_name:default_value***
 
